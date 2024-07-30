@@ -1,22 +1,35 @@
 from robocorp import browser
 from robocorp.tasks import task
-import pandas as pd
+from robocorp import workitems
+from RPA.Excel.Files import Files as Excel
 import logging
 from playwright.async_api import async_playwright
 import asyncio
 from datetime import datetime
+import json
 
 from pathlib import Path
 import os
 import requests
 import re
 
+with open('workitems.json','r') as file:
+    input_payload = json.load(file)
+
 FILE_NAME = "challenge.xlsx"
 OUTPUT_DIR = Path(os.environ.get('ROBOT_ARTIFACTS'))
-SEARCH_PHRASE = input('Type your search topic: ')
+
+workitems.inputs.current = workitems.WorkItem(payload=input_payload)
+
+current_workitem = workitems.inputs.current
+
+if current_workitem is not None:
+    SEARCH_PHRASE = current_workitem.payload.get("SEARCH_PHRASE")
+else:
+    SEARCH_PHRASE = "default_search_phrase"
+    logging.error('Nenhum item de trabalho atual disponível')
 
 
-@task
 class ImageDownloader:
     @staticmethod
     def download_image(url, base_name):
@@ -95,17 +108,29 @@ class ArticleScraper:
 
         return articles
 
+@task
 async def main():
     scraper = ArticleScraper()
     articles = await scraper.scrape_articles(SEARCH_PHRASE)
-
-    df = pd.DataFrame(articles)
-    if df.empty:
-        logging.info("No data to save.")
+    
+    excel = Excel()
+    
+    if not articles:
+        logging.info("No data to save")
     else:
         output_path = os.path.join(OUTPUT_DIR, 'news_data.xlsx')
-        df.to_excel(output_path, index=False)
-        logging.info('Data saved')
+        excel.create_workbook(output_path)
+        excel.append_rows_to_worksheet(articles, header=True)
+        excel.save_workbook()
+        logging.info('Data Saved')
+
+    # df = pd.DataFrame(articles)
+    # if df.empty:
+    #     logging.info("No data to save.")
+    # else:
+    #     output_path = os.path.join(OUTPUT_DIR, 'news_data.xlsx')
+    #     df.to_excel(output_path, index=False)
+    #     logging.info('Data saved')
 
 if __name__ == "__main__":
     asyncio.run(main())
